@@ -36,3 +36,4 @@ features:
     - floor_area_sqm
     - remaining_lease_exact_years
     - lease_age
+    - street_freq
