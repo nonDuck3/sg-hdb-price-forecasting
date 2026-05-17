@@ -1,4 +1,4 @@
-from src.gbdt_feature_preprocessor import preprocess_features
+from src.feature_preprocessor import preprocess_features
 import pandas as pd
 
 def split_train_test_data(df: pd.DataFrame, target_variable: str = "resale_price"):
@@ -23,7 +23,7 @@ def split_train_test_data(df: pd.DataFrame, target_variable: str = "resale_price
             - y_test: Target values for the testing set.
             - X_test: Feature DataFrame for the testing set (excluding target and 'rego_year').
     """
-    cleaned_df = preprocess_features(df=df)
+    cleaned_df = preprocess_features(input_df=df)
 
     train_df = cleaned_df[cleaned_df['rego_year'] <= 2024].copy()
     test_df = cleaned_df[cleaned_df['rego_year'] >= 2025].copy()
