@@ -1,6 +1,7 @@
 from utils.artifact_utils import generate_save_feature_plot, save_model_predictions, save_model_object
 from utils.split_data import split_train_test_data
 from src.target_feature_encoding import compute_town_street_avg
+from src.optuna_objective_function import objective
 from sklearn.metrics import root_mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 import optuna
@@ -14,17 +15,14 @@ warnings.filterwarnings('ignore')
 def tune_train_evaluate_model(
     df: pd.DataFrame,
     target_variable: str,
-    objective_fn: callable,
     tscv: TimeSeriesSplit,
-    n_trials: int = 100,
     model_name: str = "lightgbm"
 ):
     """
     Tune hyperparameters with Optuna, refit the best model on the full training data, and evaluate it on a held-out test set.
 
     This utility function performs the following steps:
-    1. Creates an Optuna study (minimization) and optimizes the provided `objective_fn` using the full dataset.
-       Note: The `objective_fn` is expected to handle the `TimeSeriesSplit` logic internally.
+    1. Creates an Optuna study (minimization) and optimizes the provided `objective` using the full dataset.
     2. Retrieves the best hyperparameters found by Optuna.
     3. Splits the full dataset into training and test sets using `split_train_test_data`.
     4. Applies target encoding (`compute_town_street_avg`) to the training features, then applies the same mapping to the test features.
@@ -39,14 +37,8 @@ def tune_train_evaluate_model(
         Complete dataset containing both features and the target variable.
     target_variable : str
         The name of the column in `df` representing the target.
-    objective_fn : callable
-        Optuna objective function with signature:
-            `objective_fn(trial, df, target_variable, tscv, model_name) -> float`
-        It must return a scalar value to minimize (e.g., validation loss/metric) and handle the cross-validation logic.
     tscv : TimeSeriesSplit
         The TimeSeriesSplit object used for cross-validation within the objective function.
-    n_trials : int, default=100
-        Number of Optuna trials to run.
     model_name : str, default="lightgbm"
         Label used when saving feature-importance plots, model artifacts, and for logging.
 
@@ -61,19 +53,17 @@ def tune_train_evaluate_model(
         - "test_predictions": array-like predictions from `model.predict(X_test_fe)`.
         - "rmse": float representing the root mean squared error on the test set.
     """
-
+    y_train, X_train, y_test, X_test = split_train_test_data(df=df, target_variable=target_variable)
     study = optuna.create_study(direction="minimize")
     study.optimize(
-        lambda trial: objective_fn(trial, df, target_variable, tscv, model_name),
-        n_trials=n_trials
+        lambda trial: objective(trial, x_train=X_train, y_train=y_train, tscv=tscv, model_type=model_name), 
+        n_trials=50 
     )
 
     best_params = study.best_params
     print("Best parameters: ", best_params)
     print("Number of finished trials: {}".format(len(study.trials)))
     print('Best trial:', study.best_trial.params)
-
-    y_train, X_train, y_test, X_test = split_train_test_data(df=df, target_variable=target_variable)
 
     X_train_fe, mapping, global_mean = compute_town_street_avg(
         X_train,
