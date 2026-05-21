@@ -1,12 +1,12 @@
 from utils.split_data import split_train_test_data
 from utils.artifact_utils import generate_save_feature_plot, save_model_predictions, save_model_object
+from utils.compute_print_metrics import print_metrics, calculate_model_metrics
 from src.target_feature_encoding import compute_town_street_avg
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.linear_model import ElasticNet
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import root_mean_squared_error
 import pandas as pd
 import numpy as np
 import yaml
@@ -39,6 +39,8 @@ def build_and_train_pipeline(input_df: pd.DataFrame, target_variable: str, tscv:
             - 'model_coefficients': Absolute values of the learned feature coefficients.
             - 'test_predictions': Predicted values on the test set (inverse-transformed from log scale).
             - 'rmse': The final Root Mean Squared Error on the test set.
+            - 'mae': The final Mean Absolute Error on the test set.
+            - 'r2': The final R-squared (coefficient of determination) on the test set.
     """
     
     df = input_df.copy()
@@ -78,6 +80,8 @@ def build_and_train_pipeline(input_df: pd.DataFrame, target_variable: str, tscv:
             print("="*50)
             print(f"Testing combination {combo_count}/{total_combos} => alpha: {alpha}, l1_ratio: {l1_ratio}")
             rmses = []
+            maes = []
+            r2s = []
             for _, (train_idx, val_idx) in enumerate(tscv.split(X_train)):
 
                 X_tr, X_val = X_train.iloc[train_idx], X_train.iloc[val_idx]                
@@ -105,15 +109,15 @@ def build_and_train_pipeline(input_df: pd.DataFrame, target_variable: str, tscv:
 
                 pred = np.expm1(pred_log)
 
-                rmse = root_mean_squared_error(y_val, pred)
+                rmse, mae, r2 = calculate_model_metrics(y_test=y_val, y_preds=pred)
+
                 rmses.append(rmse)
+                maes.append(mae)
+                r2s.append(r2)
 
-            avg_cv_rmse = np.mean(rmses)
-            print(f"Average CV RMSE: {avg_cv_rmse:.2f} (+/- {np.std(rmses):.2f})")
-            print("="*50)
-
-            if avg_cv_rmse < best_val:
-                best_val = avg_cv_rmse
+            avg_rmse, _, _ = print_metrics(rmse=rmses, mae=maes, r2=r2s, is_cv=True)
+            if avg_rmse < best_val:
+                best_val = avg_rmse
                 print(f"Best hyperparameters for alpha: {alpha} and l1_ratio: {l1_ratio}." + "\n")
                 hyperparam_list.extend([alpha, l1_ratio])
 
@@ -146,23 +150,27 @@ def build_and_train_pipeline(input_df: pd.DataFrame, target_variable: str, tscv:
     full_en_train_pipeline.fit(X_train_fe, log_y_train)
     test_pred_log = en_pipeline.predict(X_test_fe)
     test_set_pred = np.expm1(test_pred_log)
-    rmse_final = root_mean_squared_error(y_test, test_set_pred)
 
-    print("┌" + "─" * 46 + "┐")
-    print("│             FINAL MODEL METRICS              │")
-    print("├" + "─" * 46 + "┤")
-    print(f"  Lowest Average CV RMSE:    {best_val:,.2f}")
-    print(f"  Final Test Set RMSE:       {round(rmse_final, 2):,.2f}")
-    print("└" + "─" * 46 + "┘")
+    final_rmse, final_mae, final_r2 = calculate_model_metrics(y_test=y_test, y_preds=test_set_pred)
+    print_metrics(rmse=final_rmse, mae=final_mae, r2=final_r2)
 
     coef_df = generate_save_feature_plot(df=X_train_fe, model=full_en_train_pipeline)
     save_model_predictions(pred_values=test_set_pred, y_test=y_test, x_test=X_test_fe)
-    save_model_object(model=full_en_train_pipeline, best_params=best_params, eval_metric=rmse_final, feature_vals=coef_df["coefficient_absolute_value"])
+    save_model_object(
+        model=full_en_train_pipeline, 
+        best_params=best_params, 
+        rmse_value=final_rmse,
+        mae_value=final_mae,
+        r2_value=final_r2,
+        feature_vals=coef_df["coefficient_absolute_value"]
+    )
 
     return {
         "model": full_en_train_pipeline,
         "best_params": best_params,
         "model_coefficients": coef_df["coefficient_absolute_value"],
         "test_predictions": test_set_pred,
-        "rmse": rmse_final
+        "rmse": final_rmse,
+        "mae": final_mae,
+        "r2": final_r2
     }

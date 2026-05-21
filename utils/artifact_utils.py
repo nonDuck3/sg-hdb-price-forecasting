@@ -63,33 +63,37 @@ def generate_save_feature_plot(df: pd.DataFrame, model: object, model_type: str 
 
     return sorted_df 
 
-def save_model_object(model, best_params, eval_metric, feature_vals, model_name: str = "elastic_net"):
+def save_model_object(model: object, best_params: dict, rmse_value: float, mae_value: float, r2_value: float, feature_vals, model_name: str = "elastic_net"):
     """
     Serialize and save a trained model, hyperparameters, metrics, and feature values to disk.
 
-    This function bundles the provided model object along with its best hyperparameters,
-    evaluation metrics (RMSE), and feature-specific values (coefficients or importances) 
-    into a single dictionary and persists it using `joblib`. The output file is saved to 
+    Bundles the trained model object, best hyperparameters, evaluation metrics 
+    (RMSE, MAE, R²), and feature-specific values into a single dictionary and 
+    persists it using `joblib`. The output file is saved to 
     `./outputs/models/{model_name}_artifacts.pkl`.
 
     Parameters
     ----------
     model : object
-        The trained model or pipeline object to be persisted. Must be serializable 
-        by `joblib` (e.g., scikit-learn estimators or pipelines).
+        The trained model or pipeline object to be persisted. Must be 
+        serializable by `joblib` (e.g., scikit-learn estimators or pipelines).
     best_params : dict
         Mapping of the best hyperparameters found during tuning (e.g., from 
         GridSearchCV or RandomizedSearchCV).
-    eval_metric : float or scalar
-        The evaluation metric value (e.g., RMSE) to be stored alongside the model.
+    rmse_value : float
+        Root Mean Squared Error metric value.
+    mae_value : float
+        Mean Absolute Error metric value.
+    r2_value : float
+        R-squared (coefficient of determination) metric value.
     feature_vals : array-like or list
-        The feature values to persist. For "elastic_net" models, this typically 
-        represents non-zero coefficients. For other models, it represents feature 
-        importances. The length of this list may differ from the original feature 
-        set length (e.g., if only non-zero features are included).
+        Feature values to persist. For "elastic_net" models, this typically 
+        represents non-zero coefficients. For other models, it represents 
+        feature importances. The length may differ from the original feature 
+        set (e.g., if only non-zero features are included).
     model_name : str, default="elastic_net"
-        Base name used to construct the output filename. Determines the column key 
-        name in the saved dictionary:
+        Base name for the output filename and determines the key name for 
+        feature values in the saved dictionary:
         - "elastic_net" -> key: "feature_coefficients"
         - Other -> key: "feature_importances"
     """
@@ -97,7 +101,9 @@ def save_model_object(model, best_params, eval_metric, feature_vals, model_name:
     joblib.dump({
         "model": model,
         "best_params": best_params,
-        "rmse": eval_metric,
+        "rmse": rmse_value,
+        "mae": mae_value,
+        "r2": r2_value,
         feature_col_name: feature_vals
     }, f"./outputs/models/{model_name}_artifacts.pkl")
 
