@@ -1,10 +1,8 @@
-from utils.split_data import split_train_test_data
 from src.target_feature_encoding import compute_town_street_avg
+from utils.compute_print_metrics import calculate_model_metrics, print_metrics
 import lightgbm as lgb
 import xgboost as xgb
-from sklearn.metrics import root_mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
-import numpy as np
 import pandas as pd
 
 def objective(trial, x_train: pd.DataFrame, y_train: pd.DataFrame, tscv: TimeSeriesSplit, model_type: str = "lightgbm"):
@@ -67,6 +65,8 @@ def objective(trial, x_train: pd.DataFrame, y_train: pd.DataFrame, tscv: TimeSer
         }
 
     rmses = []
+    maes = []
+    r2s = []
     for _, (train_idx, val_idx) in enumerate(tscv.split(x_train)):
 
         X_tr, X_val = x_train.iloc[train_idx], x_train.iloc[val_idx]
@@ -111,11 +111,10 @@ def objective(trial, x_train: pd.DataFrame, y_train: pd.DataFrame, tscv: TimeSer
             )
 
         preds = model.predict(X_val_fe)
-        rmse = root_mean_squared_error(y_val, preds)
+        rmse, mae, r2 = calculate_model_metrics(y_test=y_val, y_preds=preds)
         rmses.append(rmse)
+        maes.append(mae)
+        r2s.append(r2)
 
-    print("\n" + "="*50)
-    print(f"Average CV RMSE: {np.mean(rmses):.2f} (+/- {np.std(rmses):.2f})")
-    print("="*50)
-
-    return np.mean(rmses)
+    avg_rmse, _, _ = print_metrics(rmse=rmses, mae=maes, r2=r2s, model_name=model_type, is_cv=True)
+    return avg_rmse
