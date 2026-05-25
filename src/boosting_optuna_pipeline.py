@@ -1,8 +1,8 @@
 from utils.artifact_utils import generate_save_feature_plot, save_model_predictions, save_model_object
 from utils.split_data import split_train_test_data
+from utils.compute_print_metrics import calculate_model_metrics, print_metrics
 from src.target_feature_encoding import compute_town_street_avg
 from src.optuna_objective_function import objective
-from sklearn.metrics import root_mean_squared_error
 from sklearn.model_selection import TimeSeriesSplit
 import optuna
 import pandas as pd
@@ -16,7 +16,7 @@ def tune_train_evaluate_model(
     df: pd.DataFrame,
     target_variable: str,
     tscv: TimeSeriesSplit,
-    model_name: str = "lightgbm"
+    model_name: str = "LightGBM"
 ):
     """
     Tune hyperparameters with Optuna, refit the best model on the full training data, and evaluate it on a held-out test set.
@@ -27,7 +27,7 @@ def tune_train_evaluate_model(
     3. Splits the full dataset into training and test sets using `split_train_test_data`.
     4. Applies target encoding (`compute_town_street_avg`) to the training features, then applies the same mapping to the test features.
     5. Instantiates and fits the model with the best parameters on the encoded training data.
-    6. Generates predictions for the test set and calculates the final RMSE.
+    6. Generates predictions for the test set and calculates the final RMSE, MAE, and R-squared value.
     7. Generates and saves feature importance artifacts (table and plot).
     8. Persists the model, predictions, and evaluation metrics via helper save functions.
 
@@ -52,6 +52,8 @@ def tune_train_evaluate_model(
         - "feature_importance": pandas.DataFrame with columns ["feature", "importance"], sorted descending.
         - "test_predictions": array-like predictions from `model.predict(X_test_fe)`.
         - "rmse": float representing the root mean squared error on the test set.
+        - "mae": float representing the mean absolute error on the test set.
+        - "r2": float representing the R-squared (coefficient of determination) on the test set.
     """
     y_train, X_train, y_test, X_test = split_train_test_data(df=df, target_variable=target_variable)
     study = optuna.create_study(direction="minimize")
@@ -78,7 +80,7 @@ def tune_train_evaluate_model(
         training=False
     )
 
-    if model_name == "lightgbm":
+    if model_name == "LightGBM":
         model = lgb.LGBMRegressor(
             **best_params
         )
@@ -89,12 +91,14 @@ def tune_train_evaluate_model(
 
     model.fit(X_train_fe, y_train)
     test_preds = model.predict(X_test_fe)
-    rmse_final = root_mean_squared_error(y_train, test_preds)
-    print(f"RMSE for {model_name}: ", round(rmse_final, 2))
+
+    rmse, mae, r2 = calculate_model_metrics(y_test=y_test, y_preds=test_preds)
+    print_metrics(rmse=rmse, mae=mae, r2=r2, model_name=model_name)
 
     feat_imp_df = generate_save_feature_plot(df=X_train_fe, model= model, model_type=model_name)
     save_model_predictions(pred_values=test_preds, y_test=y_test, x_test=X_test_fe, model_name=model_name)
-    save_model_object(model=model, best_params=best_params, eval_metric= rmse_final, feature_vals=feat_imp_df["importance"], model_name=model_name)
+    
+    save_model_object(model=model, best_params=best_params, rmse_value=rmse, mae_value=mae, r2_value=r2, feature_vals=feat_imp_df["importance"], model_name=model_name)
 
     return {
         "model": model,
@@ -102,5 +106,7 @@ def tune_train_evaluate_model(
         "best_params": best_params,
         "feature_importance": feat_imp_df["importance"],
         "test_predictions": test_preds,
-        "rmse": rmse_final
+        "rmse": rmse,
+        "mae": mae,
+        "r2": r2
     }
